@@ -1,26 +1,20 @@
-# 走れメロスの文章中からエンティティを抽出する
-# https://www.aozora.gr.jp/cards/000035/files/1567_14913.html : からメロスのテキストは取得できるよ
-
 import pandas as pd
 import spacy
 import re
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 
-nlp = spacy.load("ja_ginza")    # Language クラス
-
+nlp = spacy.load("ja_ginza")
 
 # ------テキストファイルを読み込む ------
 def open_file(src_file):
     with open(src_file, "r", encoding = "Shift_JIS") as file:
         text = file.read()
-    text = re.sub(r"-+\s.*?\s-+", "", text, flags = re.S)   # +: 1回以上，\s: 空白や改行，.*?: 最短一致，flags = re.S: "."が改行にもマッチするようにするフラグ
-    text = re.sub(r"底本.*", "", text, flags = re.S)   # +: 1回以上，\s: 空白や改行，.*?: 最短一致，flags = re.S: "."が改行にもマッチするようにするフラグ
-    # print(text)     # 本文を表示
+    text = re.sub(r"-+\s.*?\s-+", "", text, flags = re.S)   # "-" 1つ以上連続する文字列を削除
+    text = re.sub(r"底本.*", "", text, flags = re.S)   # 
     sentences = [sentence + "。" for sentence in text.split("。") if sentence.strip()]  # "。"で1文ごとに区切る
     # sentences = [sentence.replace("。", "") for sentence in sentences]
     return sentences
-
 
 
 if __name__ == "__main__":
@@ -33,7 +27,7 @@ if __name__ == "__main__":
     })
     df = (df
             .assign(sentence = lambda df: df["sentence"].str.split("。|\n|、"))[["sentence_id", "sentence"]]
-            .explode("sentence")    # 各要素を新しい行として展開する
+            .explode("sentence")    # 各要素を新しい行として展開
             .assign(
                 sentence = lambda df: 
                     df["sentence"]
@@ -43,9 +37,7 @@ if __name__ == "__main__":
             )
             .query("sentence.str.len()> = 1")   # 要素が空白の行を削除
         )
-    # print(df)   # debug 用
-
-
+    
     # ----- 形態素解析 -----
     df_token = (
         df.assign(token = lambda df: list(nlp.pipe(df["sentence"])))
@@ -59,12 +51,9 @@ if __name__ == "__main__":
             vector = lambda df: df["token"].apply(lambda e: e.vector)   # 単語のベクトル表現(なければ0ベクトル)
         )
         .drop(columns = "token")    # token 列の削除
-        .reset_index(drop = True)   # index を修正する
+        .reset_index(drop = True)   # index を修正
     )
     # print(df_token.columns)         # ['sentence_id', 'sentence', 'text', 'lemma', 'pos', 'is_stop','has_vector', 'vector'],
-    # print(df_token)
-    # df_token.to_csv("./meros_dataFrame.csv", index=True)
-
 
     # ----- 単語間の類似度を比較する -----
     # 名詞と固有名詞を取り出す
@@ -72,17 +61,14 @@ if __name__ == "__main__":
     print(df_token)
     # df_token.to_csv("./noun.csv", index=True)
 
-    # 重複していないエンティティのリストを作成する
+    # 重複していないエンティティのリストを作成
     df_token = df_token.query("has_vector == True")     # 単語ベクトルが存在しない単語を削除
     unique_tokens = df_token["text"].unique()     # 重複したtokenを削除する
     vectors = np.array([
-        df_token[df_token["text"] == token].iloc[0]["vector"] for token in unique_tokens     # tokenに対応するベクトルをget
+        df_token[df_token["text"] == token].iloc[0]["vector"] for token in unique_tokens     # tokenに対応するベクトルを獲得
     ])
 
     similarity_matrix = cosine_similarity(vectors)  # cosine類似度を計算
     df_similarity = pd.DataFrame(similarity_matrix, index = unique_tokens, columns = unique_tokens)
-    # df_similarity.to_csv("./similarity.csv", index=True)
-    print(df_similarity)
-    print(df_similarity["おまえ"].sort_values(ascending=False).head(10))     # メロスとの類似度Top5を表示
-    # print(df_token)    
-
+    df_similarity.to_csv("./similarity.csv", index=True)
+    print(df_similarity["おまえ"].sort_values(ascending=False).head(10))     # 指定した単語との類似度Top5を表示
